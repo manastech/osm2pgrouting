@@ -120,6 +120,7 @@ void OSMDocument::SplitWays() {
                 // Close the splitted way if we'd be exceeding max length by adding the next node,
                 // but only if this is not the 2nd node in the way
                 if (prevNode != node && splitted_way->length + length > MAX_LENGTH) {
+                    it_node--;
                     splitted_way->geom+= ")";
                     break;
                 }
