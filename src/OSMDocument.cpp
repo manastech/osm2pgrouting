@@ -60,6 +60,8 @@ const {
 }
 
 void OSMDocument::SplitWays() {
+    const double MAX_LENGTH = 0.05;
+
     std::vector<Way*>::const_iterator it(m_Ways.begin());
     std::vector<Way*>::const_iterator last(m_Ways.end());
 
@@ -77,8 +79,8 @@ void OSMDocument::SplitWays() {
 
         while (it_node != last_node) {
             Node* node = *it_node++;
-            Node* secondNode = 0;
-            Node* lastNode = 0;
+            Node* prevNode = node;
+            Node* nextNode = 0;
 
             Way* splitted_way = new Way(++id, currentWay->visible,
                 currentWay->osm_id,
@@ -104,39 +106,47 @@ void OSMDocument::SplitWays() {
 
     // GeometryFromText('LINESTRING('||x1||' '||y1||','||x2||' '||y2||')',4326);
 
-            splitted_way->geom = "LINESTRING("+ boost::lexical_cast<std::string>(node->lon) + " " + boost::lexical_cast<std::string>(node->lat) +",";
+            splitted_way->geom = "LINESTRING("+ boost::lexical_cast<std::string>(node->lon) + " " + boost::lexical_cast<std::string>(node->lat);
 
             splitted_way->AddNodeRef(node);
 
-            bool found = false;
+            // Advance through the way's nodes
+            while (it_node != last_node) {
 
-            if (it_node != last_node) {
-                while (it_node != last_node && !found) {
-                    splitted_way->AddNodeRef(*it_node);
-                    if ((*it_node)->numsOfUse > 1) {
-                        found = true;
-                        secondNode = *it_node;
-                        splitted_way->AddNodeRef(secondNode);
-                        double length = getLength(node, secondNode);
-                        if (length < 0)
-                            length*=-1;
-                        splitted_way->length+=length;
-                        splitted_way->geom+= boost::lexical_cast<std::string>(secondNode->lon) + " " + boost::lexical_cast<std::string>(secondNode->lat) + ")";
-                    } else if (backNode == (*it_node)) {
-                        lastNode =*it_node++;
-                        splitted_way->AddNodeRef(lastNode);
-                        double length = getLength(node, lastNode);
-                        if (length < 0)
-                            length*=-1;
-                        splitted_way->length+=length;
-                        splitted_way->geom+= boost::lexical_cast<std::string>(lastNode->lon) + " " + boost::lexical_cast<std::string>(lastNode->lat) + ")";
-                    } else {
-                        splitted_way->geom+= boost::lexical_cast<std::string>((*it_node)->lon) + " " + boost::lexical_cast<std::string>((*it_node)->lat) + ",";
-                        *it_node++;
-                    }
+                nextNode = *it_node;
+                double length = getLength(prevNode, nextNode);
+                if (length < 0) length*=-1;
+
+                // Close the splitted way if we'd be exceeding max length by adding the next node,
+                // but only if this is not the 2nd node in the way
+                if (prevNode != node && splitted_way->length + length > MAX_LENGTH) {
+                    splitted_way->geom+= ")";
+                    break;
                 }
+
+                // Add the next node to the splitted way
+                splitted_way->AddNodeRef(nextNode);
+                splitted_way->length += length;
+                splitted_way->geom+= ", " + boost::lexical_cast<std::string>(nextNode->lon) + " " + boost::lexical_cast<std::string>(nextNode->lat);
+                prevNode = nextNode;
+
+                // Close the way if this is a shared node, and start the next one from the last node added
+                if (nextNode->numsOfUse > 1) {
+                  splitted_way->geom+= ")";
+                  break;
+                }
+
+                // Close the way if this is the last node, and advance the iterator to stop the outer loop
+                if (backNode == nextNode) {
+                  it_node++;
+                  splitted_way->geom+= ")";
+                  break;
+                }
+
+                it_node++;
             }
 
+            // Only add the splitted way if this is not just a one-node way
             if (splitted_way->m_NodeRefs.front() != splitted_way->m_NodeRefs.back()) {
                 m_SplittedWays.push_back(splitted_way);
             } else {
